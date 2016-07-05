@@ -1,0 +1,13 @@
+ifeq ($(VERBOSE),1)
+V	=
+CURL	= curl
+RPM	= rpm -v
+STFU	=
+else
+V	= @
+CURL	= curl -s
+RPM	= rpm --quiet
+STFU	= > /dev/null 2>&1
+endif
+
+E	= $Vecho
