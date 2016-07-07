@@ -1,0 +1,158 @@
+#!/sbin/busybox sh
+export TERM=xterm-color
+echo -e "\033[0m"
+
+export PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+# busybox on EL6 needs proc to self-install
+/sbin/busybox mount -n -t proc     proc     /proc
+/sbin/busybox --install -s
+
+quiet() { [ "$quiet" == "1" ] && true || false; }
+
+header() {
+  echo -e "\033[1;94m*** $*\033[0m"
+}
+
+fatal()
+{
+  echo -e "\033[1;91m!!! $*\033[0m"
+  printf "Encountered a fatal problem!\n\nDropping you to a shell.\n\n"
+  sh
+}
+
+run() {
+  if quiet; then
+    $* > /dev/null 2>&1 || fatal "failed: $*"
+  else 
+    $* || fatal "failed: $*"
+  fi
+}
+
+# ignore failure
+runf() {
+  $* > /dev/null 2>&1
+}
+
+header "vpsAdmin LiveOS Build `cat /buildver 2>/dev/null`"
+
+quiet=0
+shell=
+lateshell=
+init=/sbin/init
+break_switch_root=0
+root=
+rootdelay=
+rootfstype=auto
+ro="ro"
+rootflags=
+rootfs="ext2"
+rootsize=$(( 1024 * 1024 * 1024 * 3))
+
+read -r cmdline < /proc/cmdline
+
+for param in $cmdline ; do
+  case $param in
+    quiet       ) quiet=1                         ;;
+    shell       ) sh                              ;;
+    lateshell   ) lateshell=1                     ;;
+    init=*      ) init=${param#init=}             ;;
+    root=*      ) root=${param#root=}             ;;
+    rootdelay=* ) rootdelay=${param#rootdelay=}   ;;
+    rootfstype=*) rootfstype=${param#rootfstype=} ;;
+    rootflags=* ) rootflags=${param#rootflags=}   ;;
+    rootfs=*    ) rootfs=${param#rootfs=}         ;;
+    rootsize=*  ) rootsize=${param#rootsize=}     ;;
+    ro          ) ro="ro"                         ;;
+    rw          ) ro="rw"                         ;;
+    snaproot    ) snaproot="yea"                  ;;
+  esac
+done
+
+run mkdir /tmp
+run mkdir /nuroot
+run mkdir -p /var/run/
+run mkdir -p /var/lib/dhclient
+
+run mount -n -t devtmpfs devtmpfs /dev
+run mount -n -t sysfs    sysfs    /sys
+run mount -n -t tmpfs    tmpfs    /tmp
+run mount -n -t tmpfs    tmpfs    /run
+run mount -n -t tmpfs    tmpfs    /var/run
+
+header "Modprobe"
+run modprobe ext4
+run modprobe virtio_pci
+run modprobe virtio_net
+run modprobe e1000e
+
+header "udev"
+# udevd location depends on version
+if [ -x /sbin/udevd ]; then
+  UDEVD=/sbin/udevd
+elif [ -x /lib/udev/udevd ]; then
+  UDEVD=/lib/udev/udevd
+elif [ -x /lib/systemd/systemd-udevd ]; then
+  UDEVD=/lib/systemd/systemd-udevd
+else
+  fatal "Cannot find udevd nor systemd-udevd"
+fi
+
+run ${UDEVD} --daemon --resolve-names=never
+run udevadm trigger
+run udevadm settle
+
+if [ -n "$rootdelay"    ] ; then sleep "$rootdelay"              ; fi
+
+header "Create /dev/zram0 with size of $rootsize"
+
+run modprobe zram
+echo $rootsize > /sys/block/zram0/disksize
+
+run ln -s /proc/mounts /etc/mtab 
+
+if [ "$rootfs" == "zfs" ]; then
+  header "ZFS"
+  run modprobe zfs
+  run zpool create tank /dev/zram0
+  run zfs create tank/root
+  runf zfs set mountpoint=legacy tank/root
+  run zfs set mountpoint=/nuroot tank/root
+  run zfs mount tank/root
+elif [ "$rootfs" == "ext2" ]; then
+  header "ext2"
+  run mkfs.ext2 /dev/zram0
+  run mount -t ext4 /dev/zram0 /nuroot
+else
+  fatal "Unknown filesystem set in cmdline - $rootfs"
+fi;
+
+run cd /nuroot
+
+header "Setup network with DHCP"
+#dhclient -1 -v -sf /sbin/dhclient-script.sh
+run udhcpc
+
+header "Fetching rootfs"
+
+wget $wget_flags -O - "${root}/rootfs.tar.gz" | tar xz
+
+header "Fetching etc"
+
+wget $wget_flags -O - "${root}/etc.tar.gz" | tar xz
+
+cd /
+
+if [ "$rootfs" == "zfs" ] && [ "$snaproot" == "yea" ]; then
+  header "Makeing snapshot of rootfs before switching to it..."
+  run zfs snap tank/root@pre-switchroot
+fi
+
+if [ "$lateshell" == "1" ]; then
+  sh
+fi
+
+header "Switching root"
+
+run killall ${UDEVD##*/}
+exec switch_root /nuroot /sbin/init 3

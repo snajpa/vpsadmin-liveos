@@ -1,0 +1,18 @@
+#!/bin/sh
+
+read -r cmdline < /proc/cmdline
+
+for param in $cmdline ; do
+  case $param in
+    root=*      ) root=${param#root=}             ;;
+  esac
+done
+
+echo "*** Fetch vmlinuz"
+wget -qO /tmp/kexec-vmlinuz $root/vmlinuz
+echo "*** Fetch initrd"
+wget -qO /tmp/kexec-initrd $root/initrd
+
+kexec --initrd=/tmp/kexec-initrd --command-line="$cmdline" /tmp/kexec-vmlinuz -l
+echo "*** Bye."
+kexec -e

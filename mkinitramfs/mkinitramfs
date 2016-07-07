@@ -1,0 +1,206 @@
+#!/bin/bash -ex
+# This file based in part on the mkinitramfs script for the LFS LiveCD
+# written by Alexander E. Patrakov and Jeremy Huntwork.
+
+DATADIR=.
+INIT=init
+DEPS=deps
+
+function store_deps() {
+  ldd $1 \
+  | grep -v linux-vdso.so.1 \
+  | grep -v "executable" \
+  | sed 's/.* => //;s/^\t*//;s/ (.*$//' >> $DEPS
+}
+
+if [ -z $1 ] ; then
+  INITRAMFS_FILE=initrd.img.no-kmods
+else
+  KERNEL_VERSION=$1
+  INITRAMFS_FILE=initrd.img
+fi
+
+
+if [ -n "$KERNEL_VERSION" ] && [ ! -d "/lib/modules/$1" ] ; then
+  echo "No modules directory named $1"
+  exit 1
+fi
+
+printf "Creating $INITRAMFS_FILE... "
+
+WDIR=builddir
+
+test -d $WDIR && rm -rf $WDIR
+test -f $DEPS && rm -f $DEPS
+
+mkdir -p $WDIR/{bin,etc,dev,sbin,lib,usr}
+mkdir -p $WDIR/usr/share/udhcpc
+
+cp $INIT $WDIR
+chmod +x $WDIR/init
+
+#busybox --install -s $WDIR
+
+#cp dhclient-script.sh $WDIR/sbin/
+#cp nsswitch.conf $WDIR/etc/
+cp udhcpc_script.sh $WDIR/usr/share/udhcpc/default.script
+cp /tmp/buildconf/overlay-root/usr/sbin/reboot-kexec $WDIR/sbin/
+cp -rf /tmp/buildconf/overlay-initrd/* $WDIR/
+cp /lib64/libnss_dns.so.2 $WDIR/lib/
+
+BUSYBOX=1
+if [ $BUSYBOX == "1" ]; then
+  binfiles="strace"
+else
+  binfiles="sh cat cp dd dmesg killall ls mkdir mknod mount ping"
+  binfiles="$binfiles umount sed sleep ln rm uname"
+  binfiles="$binfiles wget gzip gunzip tar strace dig"
+fi
+
+# Systemd installs udevadm in /bin. Other udev implementations have it in /sbin
+if [ -x /bin/udevadm ] ; then binfiles="$binfiles udevadm"; fi
+
+if [ $BUSYBOX == "1" ]; then
+  # with newer busybox we don't need mfkfs.ext2 either
+  sbinfiles="busybox mkfs.ext2"
+else
+  sbinfiles="ip dhclient lsmod modprobe blkid switch_root mkfs.ext2"
+fi
+
+sbinfiles="$sbinfiles zpool zfs kexec"
+
+#Optional files and locations
+for f in udevd udevadm; do
+  if [ -x /sbin/$f ] ; then sbinfiles="$sbinfiles $f"; fi
+done
+
+
+# Create base directory structure
+mkdir -p $WDIR/{bin,dev,lib/firmware,run,sbin,sys,proc}
+mkdir -p $WDIR/etc/{modprobe.d,udev/rules.d}
+touch $WDIR/etc/modprobe.d/modprobe.conf
+
+# Create necessary device nodes
+mknod -m 640 $WDIR/dev/console c 5 1
+mknod -m 640 $WDIR/dev/tty0    c 5 1
+mknod -m 640 $WDIR/dev/tty1    c 5 1
+mknod -m 640 $WDIR/dev/tty2    c 5 1
+mknod -m 664 $WDIR/dev/null    c 1 3
+
+# Install the udev configuration files
+#if [ -f /etc/udev/udev.conf ]; then
+#  cp /etc/udev/udev.conf $WDIR/etc/udev/udev.conf
+#fi
+#
+#for file in $(find /etc/udev/rules.d/ -type f) ; do
+#  cp $file $WDIR/etc/udev/rules.d
+#done
+
+# Install basic binaries
+for f in $binfiles ; do
+  cp "/usr/bin/$f" $WDIR/bin
+  store_deps /usr/bin/$f
+done
+
+for f in $sbinfiles ; do
+  cp "/sbin/$f" $WDIR/sbin
+  store_deps /sbin/$f
+done
+
+# Add udevd libraries if not in /sbin
+if [ -x /lib/udev/udevd ] ; then
+  store_deps /lib/udev/udevd
+elif [ -x /usr/lib/systemd/systemd-udevd ] ; then
+  store_deps /usr/lib/systemd/systemd-udevd
+
+  mkdir $WDIR/lib/systemd/
+  cp /usr/lib/systemd/systemd-udevd $WDIR/lib/systemd/
+fi
+
+# Add module symlinks if appropriate
+if [ -n "$KERNEL_VERSION" ] && [ -x /bin/kmod ] ; then
+  ln -s kmod $WDIR/bin/lsmod
+  ln -s kmod $WDIR/bin/insmod
+fi
+
+cp $DEPS deps_bin
+rm $DEPS
+
+# Install libraries
+sort deps_bin | uniq | while read library ; do
+  cp $library $WDIR/lib
+  store_deps $library
+done
+
+# PASS2, should be recursive
+#sort $DEPS | uniq | while read library ; do
+#  cp $library $WDIR/lib
+#done
+
+if [ -d /usr/lib/udev ]; then
+  cp -a /usr/lib/udev $WDIR/lib
+else
+  if [ -d /lib/udev ]; then
+    cp -a /lib/udev $WDIR/lib
+  fi
+fi
+if [ -d /usr/lib/systemd ]; then
+  cp -a /usr/lib/systemd $WDIR/lib
+fi
+
+
+# maybe add firmware?
+# modinfo -F firmware iwlwifi
+MODULES="ext4 virtio_net virtio_pci e1000e zram"
+MODULES="$MODULES zfs"
+MODS_PATH="/lib/modules/$KERNEL_VERSION"
+
+function find_module() {
+  m=$1
+  l=$( grep "${m}.ko" $MODS_PATH/modules.dep )
+  if [ $? != 0 ]; then
+    echo "Module not found $m"
+    exit 1
+  fi
+  modpath=$( echo $l | cut -d':' -f1 )
+  moddeps=$( echo $l | cut -d':' -f2 )
+  echo $modpath
+  for dep in $moddeps; do echo $dep; done
+}
+
+if [ -n "$KERNEL_VERSION" ]; then
+  mkdir -p $WDIR/$MODS_PATH
+  for mod in $MODULES; do
+    echo $mod
+    for modpath in $( find_module $mod ); do
+      cp $MODS_PATH/$modpath $WDIR/$MODS_PATH
+    done
+  done
+
+  test -f $MODS_PATH/modules.builtin && cp $MODS_PATH/modules.builtin $WDIR/lib/modules/$KERNEL_VERSION
+  cp $MODS_PATH/modules.order $WDIR/lib/modules/$KERNEL_VERSION
+  depmod -b $WDIR $KERNEL_VERSION
+fi
+
+ln -s /bin $WDIR/usr/bin
+ln -s /sbin $WDIR/usr/sbin
+ln -s /lib $WDIR/lib64
+ln -s /lib $WDIR/usr/lib
+ln -s /lib $WDIR/usr/lib64
+
+( cd $WDIR ; find . | cpio -o -H newc --quiet | gzip -9 ) > $INITRAMFS_FILE
+
+# Remove the temporary directory and file
+rm -rf $WDIR deps deps_bin
+printf "done.\n"
+
+exit 0
+
+cp $INITRAMFS_FILE /var/lib/libvirt/images/
+
+qemu-system-x86_64 -nographic -m 4096 -machine accel=kvm \
+  -netdev tap,id=hostnet0 \
+  -device virtio-net-pci,netdev=hostnet0,id=net0,mac=52:54:00:53:a0:a0,bus=pci.0,addr=0x3 \
+  -kernel vmlinuz-4.4.9-300.fc23.x86_64 \
+  -initrd initrd.img-4.4.9-300.fc23.x86_64 \
+  -append console=ttyS0

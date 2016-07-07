@@ -1,6 +1,6 @@
 [sl]
 name=Scientific Linux $releasever - $basearch
-baseurl=http://mirror.vpsfree.cz/scientific/$releasever/$basearch/os/
+baseurl=http://node4.base48.cz/mirror/$releasever/$basearch/os/
 		http://ftp1.scientificlinux.org/linux/scientific/$releasever/$basearch/os/
 		http://ftp2.scientificlinux.org/linux/scientific/$releasever/$basearch/os/
 		ftp://mirror.vpsfree.cz/scientific/$releasever/$basearch/os/
@@ -11,7 +11,7 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-sl file:///etc/pki/rpm-gpg/RPM-GPG-KE
 
 [sl-security]
 name=Scientific Linux $releasever - $basearch - security updates
-baseurl=http://mirror.vpsfree.cz/scientific/$releasever/$basearch/updates/security/
+baseurl=http://node4.base48.cz/mirror/$releasever/$basearch/updates/security/
 		http://ftp1.scientificlinux.org/linux/scientific/$releasever/$basearch/updates/security/
 		http://ftp2.scientificlinux.org/linux/scientific/$releasever/$basearch/updates/security/
 		ftp://mirror.vpsfree.cz/scientific/$releasever/$basearch/updates/security/
