@@ -158,24 +158,24 @@ qemu-usb:
 		-drive file=$(RELEASEDIR)/current/usb.img,if=virtio,boot=on
 
 help:
-	$EvpsAdmin LiveOS Build root
-	$E 
-	$E invoke full build:    make [VERBOSE=1] [VARIABLEOVERRIDE=value...]
-	$E invoke any subtarget: make <command> [VERBOSE=1][VARIABLEOVERRIDE=value...]  
-	$E 
-	$E available targets in launch order to make a full build:
-	$E 	increlease	increment a release version
-	$E 	yum_conf	configure yum in INSTALLDIR
-	$E 	bootstrap	install rootfs
-	$E 	modify-rootfs	copy buildconf overlay to rootfs and clean up
-	$E 	pack-etc	pack etc.tar.gz
-	$E	copy-kernel	extract kernel from rootfs
-	$E	mkinitrd	create
-	$E	pack-rootfs	pack rootfs.tar.gz
-	$E	releasecopy	make a new release copy
-	$E	pxe		update PXE (tftp is retarded and never heard of symlink)
-	$E	usb		create USB flashdrive image
-	$E	qemu-usb	launch USB flashdrive image in QEMU
+	$E "vpsAdmin LiveOS Build root"
+	$E ""
+	$E "invoke full build:    make [VERBOSE=1] [VARIABLEOVERRIDE=value...]"
+	$E "invoke any subtarget: make <command> [VERBOSE=1][VARIABLEOVERRIDE=value...]"
+	$E ""
+	$E "available targets in launch order to make a full build:"
+	$E "\tincrelease    increment a release version"
+	$E "\tyum_conf      configure yum in INSTALLDIR"
+	$E "\tbootstrap     install rootfs"
+	$E "\tmodify-rootfs copy buildconf overlay to rootfs and clean up"
+	$E "\tpack-etc      pack etc.tar.gz"
+	$E "\tcopy-kernel   extract kernel from rootfs"
+	$E "\tmkinitrd      create ramdisk"
+	$E "\tpack-rootfs   pack rootfs.tar.gz"
+	$E "\treleasecopy   make a new release copy"
+	$E "\tpxe           update PXE (tftp is retarded and never heard of symlink)"
+	$E "\tusb           create USB flashdrive image"
+	$E "\tqemu-usb      launch USB flashdrive image in QEMU"
 
 rel_0: clean increlease
 	$(IFDEBUG) echo DEBUG BUILD $(RELEASEVER)
