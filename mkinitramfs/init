@@ -98,7 +98,7 @@ else
   fatal "Cannot find udevd nor systemd-udevd"
 fi
 
-run ${UDEVD} --daemon --resolve-names=never
+${UDEVD} --daemon --resolve-names=never
 run udevadm trigger
 run udevadm settle
 
@@ -112,7 +112,7 @@ echo $rootsize > /sys/block/zram0/disksize
 run ln -s /proc/mounts /etc/mtab 
 
 if [ "$rootfs" == "zfs" ]; then
-  header "ZFS"
+  header "ZFS rootfs"
   run modprobe zfs
   run zpool create tank /dev/zram0
   run zfs create tank/root
@@ -120,7 +120,7 @@ if [ "$rootfs" == "zfs" ]; then
   run zfs set mountpoint=/nuroot tank/root
   run zfs mount tank/root
 elif [ "$rootfs" == "ext2" ]; then
-  header "ext2"
+  header "ext2 rootfs"
   run mkfs.ext2 /dev/zram0
   run mount -t ext4 /dev/zram0 /nuroot
 else
@@ -129,17 +129,56 @@ fi;
 
 run cd /nuroot
 
-header "Setup network with DHCP"
-#dhclient -1 -v -sf /sbin/dhclient-script.sh
-run udhcpc
 
-header "Fetching rootfs"
+if [ "$root" == "fat32" ]; then
 
-wget $wget_flags -O - "${root}/rootfs.tar.gz" | tar xz
+  header "Scanning for root files"
 
-header "Fetching etc"
+  run modprobe vfat
 
-wget $wget_flags -O - "${root}/etc.tar.gz" | tar xz
+  mkdir /fat32
+
+  foundroot=""
+  blkdevs=""
+
+  for bdev in `ls -1 /sys/block`; do
+    fatblkdevs="$fatblkdevs `ls /dev/$bdev*`"
+  done
+
+  for bdev in $fatblkdevs; do
+    runf mount -t vfat $bdev /fat32
+    if [ -f /fat32/vmlinuz ] && \
+       [ -f /fat32/initrd ] && \
+       [ -f /fat32/rootfs.tar.gz ] && \
+       [ -f /fat32/etc.tar.gz ]; then
+      foundroot=$bdev
+      header "Found root files at $foundroot"
+      break
+    fi
+  done
+
+  if [ "$foundroot" == "" ]; then
+    fatal "Didn't find root, looked everywhere"
+  fi
+
+  echo $bdev > /nuroot/.root-fat32
+  echo $bdev > /.root-fat32
+
+  header "Unpacking rootfs"
+  run tar xzf /fat32/rootfs.tar.gz
+
+  header "Unpacking etc"
+  run tar xzf /fat32/etc.tar.gz
+else
+  header "Setup network root with DHCP"
+  run udhcpc
+
+  header "Fetching and upacking rootfs"
+  wget $wget_flags -O - "${root}/rootfs.tar.gz" | tar xz
+
+  header "Fetching and unpacking etc"
+  wget $wget_flags -O - "${root}/etc.tar.gz" | tar xz
+fi
 
 cd /
 
@@ -154,5 +193,5 @@ fi
 
 header "Switching root"
 
-run killall ${UDEVD##*/}
+runf killall ${UDEVD##*/}
 exec switch_root /nuroot /sbin/init 3

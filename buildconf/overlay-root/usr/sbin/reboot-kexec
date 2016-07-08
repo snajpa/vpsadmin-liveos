@@ -8,11 +8,18 @@ for param in $cmdline ; do
   esac
 done
 
-echo "*** Fetch vmlinuz"
-wget -qO /tmp/kexec-vmlinuz $root/vmlinuz
-echo "*** Fetch initrd"
-wget -qO /tmp/kexec-initrd $root/initrd
+[ ! -d /fat32 ] && mkdir /fat32
+if [ $root == "fat32" ]; then
+  mount -t vfat `cat /.root-fat32` /fat32
+else
+  echo "*** Fetch vmlinuz"
+  wget -qO /fat32/vmlinuz $root/vmlinuz
+  echo "*** Fetch initrd"
+  wget -qO /fat32/initrd $root/initrd
+fi;
 
-kexec --initrd=/tmp/kexec-initrd --command-line="$cmdline" /tmp/kexec-vmlinuz -l
+
+echo "*** Load new kernel and initrd"
+kexec --initrd=/fat32/initrd --command-line="$cmdline" /fat32/vmlinuz -l > /dev/null
 echo "*** Bye."
 kexec -e

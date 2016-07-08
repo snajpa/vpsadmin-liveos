@@ -149,9 +149,7 @@ if [ -d /usr/lib/systemd ]; then
 fi
 
 
-# maybe add firmware?
-# modinfo -F firmware iwlwifi
-MODULES="ext4 virtio_net virtio_pci e1000e zram"
+MODULES="vfat ext4 virtio_net virtio_pci virtio_blk e1000e zram"
 MODULES="$MODULES zfs"
 MODS_PATH="/lib/modules/$KERNEL_VERSION"
 

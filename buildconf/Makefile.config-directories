@@ -1,0 +1,6 @@
+INSTALLDIR = $(BASEDIR)/install
+DOWNLOADDIR = $(BASEDIR)/download
+RELEASEDIR = /tank/liveos
+
+TMPDIR = $(BASEDIR)/tmp
+PXEDIR=/tank/pxe/os/vpsadmin/current

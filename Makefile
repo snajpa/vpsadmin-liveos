@@ -2,43 +2,32 @@ BASEDIR = $(shell readlink -f .)
 
 BUILDCONF = $(BASEDIR)/buildconf
 
-PXEDIR=/tank/pxe/os/vpsadmin/current
-
 DEBUG = 1
 
-EL_NAME = scientific
-EL_VER = 6.7
-EL_ARCH = x86_64
-EL_BASEURL = http://mirror.karneval.cz/pub/linux/scientific/$(EL_VER)/$(EL_ARCH)
-EL_REPOURL = $(EL_BASEURL)/os
-EL_UPDATES = $(EL_BASEURL)/updates/security
-EL_REL_RPM = $(EL_BASEURL)/os/Packages/sl-release-6.7-2.x86_64.rpm
-EL_YUM_REPOS = $(shell ls -1 $(BUILDCONF)/overlay-root/etc/yum.repos.d/*.repo)
-EL_GPG_KEYS = $(shell ls -1 $(BUILDCONF)/overlay-root/etc/yum.repos.d/RPM-GPG-KEY-*)
-EL_RPMLIST = $(BUILDCONF)/rpms.list
-
-INSTALLDIR = $(BASEDIR)/install
-DOWNLOADDIR = $(BASEDIR)/download
-RELEASEDIR = /tank/liveos
-
-TMPDIR = $(BASEDIR)/tmp
-
+include $(BUILDCONF)/Makefile.config-repo
+include $(BUILDCONF)/Makefile.config-directories
 include Makefile.general
 
 RELEASEVER = "$$(cat $(RELEASEDIR)/current-release)"
+
+itworkbitch:
+	$E Install build dependencies
+	$Vyum install -y parted qemu-kvm util-linux-ng syslinux syslinux-nonlinu \
+		kpartx dosfstools
 
 increlease:
 	$Vif [ -f $(RELEASEDIR)/current-release ]; then \
 		echo $$(( $$(cat $(RELEASEDIR)/current-release) + 1 )) > \
 						$(RELEASEDIR)/current-release; \
 	else \
-		echo 1 > $(RELEASEDIR)/current-release; \
+		echo 1337 > $(RELEASEDIR)/current-release; \
 	fi;
 
 clean:
 	$E Clean
 	$Vrm -Rf $(INSTALLDIR) $(DOWNLOADDIR) $(TMPDIR)
-	$Vrm -Rf $(RELEASEDIR)/{rootfs.tar.gz,etc.tar.gz,vmlinuz,initrd}
+	$Vrm -Rf $(RELEASEDIR)/{rootfs.tar.gz,etc.tar.gz,vmlinuz,initrd,usb.img}
+	$Vrm -f $(BUILDCONF)/overlay-{root,initrd}/buildver
 
 check_dirs:
 	$V[ -d $(BUILDCONF) ]
@@ -52,10 +41,10 @@ C	= >> $(TMPDIR)/yum.conf
 yum_conf:
 	$E Configure yum
 	$E [main]							$C
-	$E cachedir=$(TMPDIR)/var/cache/yum/$(EL_ARCH)/$(EL_VER)	$C
+	$E cachedir=/var/cache/yum/$(EL_ARCH)/$(EL_VER)			$C
 	$E keepcache=0							$C
 	$E debuglevel=2							$C
-	$E logfile=$(TMPDIR)/var/log/yum.log				$C
+	$E logfile=/var/log/yum.log					$C
 	$E exactarch=1							$C
 	$E obsoletes=1							$C
 	$E gpgcheck=1							$C
@@ -115,8 +104,8 @@ copy-kernel:
 mkinitrd:
 	$E Make initrd
 	$Vcp -r $(BASEDIR)/mkinitramfs $(INSTALLDIR)/tmp/
-	$Vcp -r $(BUILDCONF) $(INSTALLDIR)/tmp/
 	$Vecho $(RELEASEVER) > $(BUILDCONF)/overlay-initrd/buildver
+	$Vcp -r $(BUILDCONF) $(INSTALLDIR)/tmp/
 	$Vkernel=`ls -1 $(INSTALLDIR)/boot/vmlinuz-* | sed 's/.*vmlinuz\-//g'`; \
 	chroot $(INSTALLDIR)\
 		bash -c "cd /tmp/mkinitramfs; ./mkinitramfs $$kernel" $(STFU)
@@ -142,6 +131,32 @@ pxe:
 	$Vrm -f $(PXEDIR)/current/{vmlinuz,initrd}
 	$Vcp -f $(RELEASEDIR)/current/{vmlinuz,initrd} $(PXEDIR)/
 
+usb:
+	$E Create bootable USB drive
+	$Vkpartx -d /dev/loop0 $(STFU) || true
+	$Vlosetup -d /dev/loop0 $(STFU) || true
+	$Vdd if=/dev/zero of=$(RELEASEDIR)/current/usb.img bs=1M count=1024 $(STFU)
+	$Vlosetup /dev/loop0 $(RELEASEDIR)/current/usb.img
+	$Vparted /dev/loop0 --script mklabel msdos
+	$Vparted /dev/loop0 --script mkpart primary fat32 0% 100%
+	$Vparted /dev/loop0 --script set 1 boot on
+	$Vkpartx -a /dev/loop0 && sleep 2
+	$Vmkfs.vfat /dev/mapper/loop0p1
+	$Vsyslinux -i /dev/mapper/loop0p1
+	$Vmount /dev/mapper/loop0p1 /mnt
+	$Vcp $(RELEASEDIR)/current/{initrd,vmlinuz,rootfs.tar.gz,etc.tar.gz} /mnt/
+	$Vcp /usr/share/syslinux/menu.c32 /mnt/
+	$Vcp $(BUILDCONF)/syslinux.cfg /mnt/
+	$Vumount /mnt
+	$Vdd conv=notrunc bs=440 if=/usr/share/syslinux/mbr.bin of=/dev/loop0 $(STFU)
+	$Vkpartx -d /dev/loop0
+	$Vlosetup -d /dev/loop0
+
+qemu-usb:
+	$E Launch QEMU with USB drive
+	$V/usr/libexec/qemu-kvm -nographic -m 4096 -machine accel=kvm \
+		-drive file=$(RELEASEDIR)/current/usb.img,if=virtio,boot=on
+
 rel_0: clean increlease
 	$(IFDEBUG) echo DEBUG BUILD $(RELEASEVER)
 	$(IFNDEBUG) echo PRODUCTION BUILD $(RELEASEVER)
@@ -152,5 +167,5 @@ rel_4: rel_3 modify-rootfs
 rel_5: rel_4 pack-etc copy-kernel mkinitrd
 rel_6: rel_5 pack-rootfs
 rel_7: rel_6 releasecopy
-rel_8: rel_7 pxe
+rel_8: rel_7 pxe usb
 .DEFAULT_GOAL := rel_8
