@@ -157,6 +157,26 @@ qemu-usb:
 	$V/usr/libexec/qemu-kvm -nographic -m 4096 -machine accel=kvm \
 		-drive file=$(RELEASEDIR)/current/usb.img,if=virtio,boot=on
 
+help:
+	$EvpsAdmin LiveOS Build root
+	$E 
+	$E invoke full build:    make [VERBOSE=1] [VARIABLEOVERRIDE=value...]
+	$E invoke any subtarget: make <command> [VERBOSE=1][VARIABLEOVERRIDE=value...]  
+	$E 
+	$E available targets in launch order to make a full build:
+	$E 	increlease	increment a release version
+	$E 	yum_conf	configure yum in INSTALLDIR
+	$E 	bootstrap	install rootfs
+	$E 	modify-rootfs	copy buildconf overlay to rootfs and clean up
+	$E 	pack-etc	pack etc.tar.gz
+	$E	copy-kernel	extract kernel from rootfs
+	$E	mkinitrd	create
+	$E	pack-rootfs	pack rootfs.tar.gz
+	$E	releasecopy	make a new release copy
+	$E	pxe		update PXE (tftp is retarded and never heard of symlink)
+	$E	usb		create USB flashdrive image
+	$E	qemu-usb	launch USB flashdrive image in QEMU
+
 rel_0: clean increlease
 	$(IFDEBUG) echo DEBUG BUILD $(RELEASEVER)
 	$(IFNDEBUG) echo PRODUCTION BUILD $(RELEASEVER)
@@ -168,4 +188,6 @@ rel_5: rel_4 pack-etc copy-kernel mkinitrd
 rel_6: rel_5 pack-rootfs
 rel_7: rel_6 releasecopy
 rel_8: rel_7 pxe usb
-.DEFAULT_GOAL := rel_8
+all:   rel_8
+
+.DEFAULT_GOAL := all
