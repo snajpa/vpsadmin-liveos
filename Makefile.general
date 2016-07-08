@@ -10,7 +10,7 @@ RPM	= rpm --quiet
 STFU	= > /dev/null 2>&1
 endif
 
-E	= $Vecho
+E	= $Vecho -e 
 
 ifeq ($(DEBUG),1)
 IFDEBUG = $Vtrue &&

@@ -164,6 +164,7 @@ help:
 	$E "invoke any subtarget: make <command> [VERBOSE=1][VARIABLEOVERRIDE=value...]"
 	$E ""
 	$E "available targets in launch order to make a full build:"
+	$E "\titworkbitch   install build dependencies"
 	$E "\tincrelease    increment a release version"
 	$E "\tyum_conf      configure yum in INSTALLDIR"
 	$E "\tbootstrap     install rootfs"
@@ -177,7 +178,7 @@ help:
 	$E "\tusb           create USB flashdrive image"
 	$E "\tqemu-usb      launch USB flashdrive image in QEMU"
 
-rel_0: clean increlease
+rel_0: clean increlease itworkbitch
 	$(IFDEBUG) echo DEBUG BUILD $(RELEASEVER)
 	$(IFNDEBUG) echo PRODUCTION BUILD $(RELEASEVER)
 rel_1: rel_0 check_dirs
